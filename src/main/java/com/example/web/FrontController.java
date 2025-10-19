@@ -1,53 +1,78 @@
 package com.example.web;
 
-import java.io.IOException;
-import java.io.PrintWriter;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import java.io.*;
+import javax.servlet.*;
+import javax.servlet.http.*;
 
 public class FrontController extends HttpServlet {
 
+    @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
+
+        response.setContentType("text/html;charset=UTF-8");
+
         String requestURI = request.getRequestURI();
         String contextPath = request.getContextPath();
-        String url = requestURI.substring(contextPath.length());
+        String path = requestURI.substring(contextPath.length());
 
-        String viewName = null;
-        /*if ("/".equals(url)) {
-            viewName = "home.jsp";
-        } else if ("/hello".equals(url)) {
-            viewName = "hello.jsp";
-        } else if ("/test-url".equals(url)) {
-            viewName = "test.jsp";
-        }*/
+        if (path.startsWith("/")) {
+            path = path.substring(1);
+        }
 
-        if (viewName != null) {
-            RequestDispatcher dispatcher = request.getRequestDispatcher("/views/" + viewName);
-            dispatcher.forward(request, response);
+        if (path.isEmpty()) {
+            path = "index.html";
+        }
+
+        if (!path.endsWith(".html") && !path.endsWith(".jsp")) {
+            if (fileExists(request, "/views/" + path + ".html")) {
+                path = path + ".html";
+            } else if (fileExists(request, "/views/" + path + ".jsp")) {
+                path = path + ".jsp";
+            }
+        }
+
+        String fullPath = "/views/" + path;
+
+        if (fileExists(request, fullPath)) {
+            if (path.endsWith(".jsp")) {
+                RequestDispatcher dispatcher = request.getRequestDispatcher(fullPath);
+                dispatcher.forward(request, response);
+            } else if (path.endsWith(".html")) {
+                serveHtml(request, response, fullPath);
+            }
         } else {
-            response.setContentType("text/html;charset=UTF-8");
             try (PrintWriter out = response.getWriter()) {
-                out.println("<h2>url inconnu pour cette url : " + url + "</h2>");
+                out.println("<h2>Requested resource not found for URL: " + requestURI + "</h2>");
+            }
+        }
+    }
+
+    private boolean fileExists(HttpServletRequest request, String relativePath) {
+        String realPath = getServletContext().getRealPath(relativePath);
+        if (realPath == null) return false;
+        File file = new File(realPath);
+        return file.exists() && file.isFile();
+    }
+
+    private void serveHtml(HttpServletRequest request, HttpServletResponse response, String relativePath)
+            throws IOException {
+        String realPath = getServletContext().getRealPath(relativePath);
+        File file = new File(realPath);
+
+        response.setContentType("text/html;charset=UTF-8");
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(file));
+             PrintWriter out = response.getWriter()) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                out.println(line);
             }
         }
     }
 
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        service(request, response);
-    }
-
-    @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        service(request, response);
-    }
-
-    @Override
     public String getServletInfo() {
-        return "FrontServlet for the custom framework.";
+        return "FrontController that dynamically loads JSP and HTML files from /views";
     }
 }

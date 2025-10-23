@@ -1,10 +1,38 @@
 package com.example.web;
 
 import java.io.*;
+import java.util.*;
+import java.lang.reflect.Method;
 import javax.servlet.*;
 import javax.servlet.http.*;
 
+import com.example.annotation.AnnotationController;
+import com.example.annotation.GetMethode;
+
 public class FrontController extends HttpServlet {
+
+    // Map of controller classes keyed by class-level prefix
+    private final Map<String, Class<?>> routeMap = new HashMap<>();
+
+    @Override
+    public void init() throws ServletException {
+        super.init();
+
+        // Manually list controller classes (can be automated later)
+        List<Class<?>> controllers = Arrays.asList(
+            com.example.controller.TestController.class,
+            com.example.controller.HelloController.class
+        );
+
+        for (Class<?> controller : controllers) {
+            if (controller.isAnnotationPresent(AnnotationController.class)) {
+                AnnotationController ac = controller.getAnnotation(AnnotationController.class);
+                String prefix = ac.value();
+                routeMap.put(prefix, controller);
+                System.out.println("Mapped route: " + prefix + " -> " + controller.getName());
+            }
+        }
+    }
 
     @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
@@ -12,17 +40,66 @@ public class FrontController extends HttpServlet {
 
         response.setContentType("text/html;charset=UTF-8");
 
-        String requestURI = request.getRequestURI();
-        String contextPath = request.getContextPath();
-        String path = requestURI.substring(contextPath.length());
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        if (path.isEmpty() || path.equals("/")) path = "/index";
 
-        if (path.startsWith("/")) {
-            path = path.substring(1);
+        boolean handled = false;
+
+        // 1️⃣ Try to match a controller and its @GetMethode methods
+        for (Map.Entry<String, Class<?>> entry : routeMap.entrySet()) {
+            String prefix = entry.getKey();
+            Class<?> controllerClass = entry.getValue();
+
+            if (path.startsWith(prefix)) {
+                try {
+                    Object controllerInstance = controllerClass.getDeclaredConstructor().newInstance();
+
+                    for (Method method : controllerClass.getDeclaredMethods()) {
+                        if (method.isAnnotationPresent(GetMethode.class)) {
+                            GetMethode gm = method.getAnnotation(GetMethode.class);
+                            String fullPath = prefix + gm.value();
+
+                            // normalize trailing slashes
+                            String normalizedPath = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+                            String normalizedFullPath = fullPath.endsWith("/") ? fullPath.substring(0, fullPath.length() - 1) : fullPath;
+
+                            if (normalizedPath.equals(normalizedFullPath)) {
+                                method.invoke(controllerInstance, request, response);
+                                handled = true;
+                                return; // request handled
+                            }
+                        }
+                    }
+
+                    // fallback to handle() method if exists
+                    if (!handled) {
+                        try {
+                            controllerClass.getMethod("handle", HttpServletRequest.class, HttpServletResponse.class)
+                                           .invoke(controllerInstance, request, response);
+                            handled = true;
+                            return;
+                        } catch (NoSuchMethodException ex) {
+                            // ignore, fallback to file serving
+                        }
+                    }
+
+                } catch (Exception e) {
+                    throw new ServletException("Error invoking controller for path " + path, e);
+                }
+            }
         }
 
-        if (path.isEmpty()) {
-            path = "index.html";
+        // 2️⃣ If no controller handled it, fallback to static files
+        if (!handled) {
+            handleFileRequest(request, response, path);
         }
+    }
+
+    private void handleFileRequest(HttpServletRequest request, HttpServletResponse response, String path)
+            throws IOException, ServletException {
+
+        if (path.startsWith("/")) path = path.substring(1);
+        if (path.isEmpty()) path = "index.html";
 
         if (!path.endsWith(".html") && !path.endsWith(".jsp")) {
             if (fileExists(request, "/views/" + path + ".html")) {
@@ -43,7 +120,7 @@ public class FrontController extends HttpServlet {
             }
         } else {
             try (PrintWriter out = response.getWriter()) {
-                out.println("<h2>Requested resource not found for URL: " + requestURI + "</h2>");
+                out.println("<h2>Requested resource not found for URL: " + path + "</h2>");
             }
         }
     }
@@ -69,10 +146,5 @@ public class FrontController extends HttpServlet {
                 out.println(line);
             }
         }
-    }
-
-    @Override
-    public String getServletInfo() {
-        return "FrontController that dynamically loads JSP and HTML files from /views";
     }
 }

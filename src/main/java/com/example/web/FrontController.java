@@ -3,6 +3,11 @@ package com.example.web;
 import java.io.*;
 import java.util.*;
 import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+
 import javax.servlet.*;
 import javax.servlet.http.*;
 
@@ -17,16 +22,14 @@ public class FrontController extends HttpServlet {
     public void init() throws ServletException {
         super.init();
 
-        List<Class<?>> controllers = Arrays.asList(
-        );
+        String basePackage = "com.example.controller";
+        Set<Class<?>> controllers = findClassesWithAnnotation(basePackage, AnnotationController.class);
 
         for (Class<?> controller : controllers) {
-            if (controller.isAnnotationPresent(AnnotationController.class)) {
-                AnnotationController ac = controller.getAnnotation(AnnotationController.class);
-                String prefix = ac.value();
-                routeMap.put(prefix, controller);
-                System.out.println("Mapped route: " + prefix + " -> " + controller.getName());
-            }
+            AnnotationController ac = controller.getAnnotation(AnnotationController.class);
+            String prefix = ac.value();
+            routeMap.put(prefix, controller);
+            System.out.println("Mapped route: " + prefix + " -> " + controller.getName());
         }
     }
 
@@ -35,7 +38,6 @@ public class FrontController extends HttpServlet {
             throws ServletException, IOException {
 
         response.setContentType("text/html;charset=UTF-8");
-
         String path = request.getRequestURI().substring(request.getContextPath().length());
         if (path.isEmpty() || path.equals("/")) path = "/index";
 
@@ -60,7 +62,7 @@ public class FrontController extends HttpServlet {
                             if (normalizedPath.equals(normalizedFullPath)) {
                                 method.invoke(controllerInstance, request, response);
                                 handled = true;
-                                return; 
+                                return;
                             }
                         }
                     }
@@ -71,8 +73,7 @@ public class FrontController extends HttpServlet {
                                            .invoke(controllerInstance, request, response);
                             handled = true;
                             return;
-                        } catch (NoSuchMethodException ex) {
-                        }
+                        } catch (NoSuchMethodException ignored) {}
                     }
 
                 } catch (Exception e) {
@@ -81,34 +82,75 @@ public class FrontController extends HttpServlet {
             }
         }
 
-        if (!handled) {
-            handleFileRequest(request, response, path);
+        if (!handled) handleFileRequest(request, response, path);
+    }
+
+    private Set<Class<?>> findClassesWithAnnotation(String basePackage, Class<?> annotation) {
+        Set<Class<?>> classes = new HashSet<>();
+        try {
+            String path = basePackage.replace('.', '/');
+            Enumeration<URL> resources = Thread.currentThread().getContextClassLoader().getResources(path);
+
+            while (resources.hasMoreElements()) {
+                URL resource = resources.nextElement();
+                String filePath = URLDecoder.decode(resource.getFile(), "UTF-8");
+                File dir = new File(filePath);
+
+                if (dir.exists()) {
+                    for (File file : Objects.requireNonNull(dir.listFiles())) {
+                        if (file.getName().endsWith(".class")) {
+                            String className = basePackage + '.' + file.getName().replace(".class", "");
+                            try {
+                                Class<?> cls = Class.forName(className);
+                                if (cls.isAnnotationPresent((Class) annotation)) {
+                                    classes.add(cls);
+                                }
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+                } else if (filePath.contains(".jar!")) {
+                    String jarPath = filePath.substring(5, filePath.indexOf("!"));
+                    try (JarFile jar = new JarFile(jarPath)) {
+                        Enumeration<JarEntry> entries = jar.entries();
+                        while (entries.hasMoreElements()) {
+                            JarEntry entry = entries.nextElement();
+                            String name = entry.getName();
+                            if (name.startsWith(path) && name.endsWith(".class")) {
+                                String className = name.replace('/', '.').replace(".class", "");
+                                try {
+                                    Class<?> cls = Class.forName(className);
+                                    if (cls.isAnnotationPresent((Class) annotation)) {
+                                        classes.add(cls);
+                                    }
+                                } catch (Throwable ignored) {}
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
+        return classes;
     }
 
     private void handleFileRequest(HttpServletRequest request, HttpServletResponse response, String path)
             throws IOException, ServletException {
-
         if (path.startsWith("/")) path = path.substring(1);
         if (path.isEmpty()) path = "index.html";
 
         if (!path.endsWith(".html") && !path.endsWith(".jsp")) {
-            if (fileExists(request, "/views/" + path + ".html")) {
-                path = path + ".html";
-            } else if (fileExists(request, "/views/" + path + ".jsp")) {
-                path = path + ".jsp";
-            }
+            if (fileExists(request, "/views/" + path + ".html")) path += ".html";
+            else if (fileExists(request, "/views/" + path + ".jsp")) path += ".jsp";
         }
 
         String fullPath = "/views/" + path;
 
         if (fileExists(request, fullPath)) {
-            if (path.endsWith(".jsp")) {
-                RequestDispatcher dispatcher = request.getRequestDispatcher(fullPath);
-                dispatcher.forward(request, response);
-            } else if (path.endsWith(".html")) {
+            if (path.endsWith(".jsp"))
+                request.getRequestDispatcher(fullPath).forward(request, response);
+            else
                 serveHtml(request, response, fullPath);
-            }
         } else {
             try (PrintWriter out = response.getWriter()) {
                 out.println("<h2>Requested resource not found for URL: " + path + "</h2>");
@@ -118,24 +160,16 @@ public class FrontController extends HttpServlet {
 
     private boolean fileExists(HttpServletRequest request, String relativePath) {
         String realPath = getServletContext().getRealPath(relativePath);
-        if (realPath == null) return false;
-        File file = new File(realPath);
-        return file.exists() && file.isFile();
+        return realPath != null && new File(realPath).exists();
     }
 
     private void serveHtml(HttpServletRequest request, HttpServletResponse response, String relativePath)
             throws IOException {
-        String realPath = getServletContext().getRealPath(relativePath);
-        File file = new File(realPath);
-
-        response.setContentType("text/html;charset=UTF-8");
-
+        File file = new File(getServletContext().getRealPath(relativePath));
         try (BufferedReader reader = new BufferedReader(new FileReader(file));
              PrintWriter out = response.getWriter()) {
             String line;
-            while ((line = reader.readLine()) != null) {
-                out.println(line);
-            }
+            while ((line = reader.readLine()) != null) out.println(line);
         }
     }
 }

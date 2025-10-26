@@ -11,17 +11,13 @@ import com.example.annotation.GetMethode;
 
 public class FrontController extends HttpServlet {
 
-    // Map of controller classes keyed by class-level prefix
     private final Map<String, Class<?>> routeMap = new HashMap<>();
 
     @Override
     public void init() throws ServletException {
         super.init();
 
-        // Manually list controller classes (can be automated later)
         List<Class<?>> controllers = Arrays.asList(
-            com.example.controller.TestController.class,
-            com.example.controller.HelloController.class
         );
 
         for (Class<?> controller : controllers) {
@@ -45,7 +41,6 @@ public class FrontController extends HttpServlet {
 
         boolean handled = false;
 
-        // 1️⃣ Try to match a controller and its @GetMethode methods
         for (Map.Entry<String, Class<?>> entry : routeMap.entrySet()) {
             String prefix = entry.getKey();
             Class<?> controllerClass = entry.getValue();
@@ -59,19 +54,17 @@ public class FrontController extends HttpServlet {
                             GetMethode gm = method.getAnnotation(GetMethode.class);
                             String fullPath = prefix + gm.value();
 
-                            // normalize trailing slashes
                             String normalizedPath = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
                             String normalizedFullPath = fullPath.endsWith("/") ? fullPath.substring(0, fullPath.length() - 1) : fullPath;
 
                             if (normalizedPath.equals(normalizedFullPath)) {
                                 method.invoke(controllerInstance, request, response);
                                 handled = true;
-                                return; // request handled
+                                return; 
                             }
                         }
                     }
 
-                    // fallback to handle() method if exists
                     if (!handled) {
                         try {
                             controllerClass.getMethod("handle", HttpServletRequest.class, HttpServletResponse.class)
@@ -79,7 +72,6 @@ public class FrontController extends HttpServlet {
                             handled = true;
                             return;
                         } catch (NoSuchMethodException ex) {
-                            // ignore, fallback to file serving
                         }
                     }
 
@@ -89,7 +81,6 @@ public class FrontController extends HttpServlet {
             }
         }
 
-        // 2️⃣ If no controller handled it, fallback to static files
         if (!handled) {
             handleFileRequest(request, response, path);
         }

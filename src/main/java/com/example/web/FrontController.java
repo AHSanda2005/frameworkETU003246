@@ -1,138 +1,64 @@
 package com.example.web;
 
 import java.io.*;
-import java.util.*;
 import java.lang.reflect.Method;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
-
 import javax.servlet.*;
 import javax.servlet.http.*;
 
-import com.example.annotation.AnnotationController;
-import com.example.annotation.GetMethode;
-
 public class FrontController extends HttpServlet {
 
-    private final Map<String, Class<?>> routeMap = new HashMap<>();
+    @Override
+public void init() throws ServletException {
+    ControllerScanner.initialize("com.example.controller");
+    ControllerScanner.printAllRoutes();
+
+    ControllerScanner.listMethods("com.example.controller");
+}
+
+
 
     @Override
-    public void init() throws ServletException {
-        super.init();
+protected void service(HttpServletRequest request, HttpServletResponse response)
+        throws ServletException, IOException {
 
-        String basePackage = "com.example.controller";
-        Set<Class<?>> controllers = findClassesWithAnnotation(basePackage, AnnotationController.class);
+    response.setContentType("text/html;charset=UTF-8");
 
-        for (Class<?> controller : controllers) {
-            AnnotationController ac = controller.getAnnotation(AnnotationController.class);
-            String prefix = ac.value();
-            routeMap.put(prefix, controller);
-            System.out.println("Mapped route: " + prefix + " -> " + controller.getName());
-        }
-    }
+    String path = request.getRequestURI().substring(request.getContextPath().length());
+    if (path.isEmpty() || path.equals("/")) path = "/index";
 
-    @Override
-    protected void service(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+    Method method = ControllerScanner.getMethod(path);
 
-        response.setContentType("text/html;charset=UTF-8");
-        String path = request.getRequestURI().substring(request.getContextPath().length());
-        if (path.isEmpty() || path.equals("/")) path = "/index";
+    if (method != null) {
+        Object controller = ControllerScanner.getController(method);
 
-        boolean handled = false;
+        try (PrintWriter out = response.getWriter()) {
+            Class<?> cls = controller.getClass();
+            out.println("<html><body>");
+            out.println("<h2>Controller: " + cls.getSimpleName() + "</h2>");
+            out.println("<h3>Methods:</h3>");
+            out.println("<ul>");
 
-        for (Map.Entry<String, Class<?>> entry : routeMap.entrySet()) {
-            String prefix = entry.getKey();
-            Class<?> controllerClass = entry.getValue();
-
-            if (path.startsWith(prefix)) {
-                try {
-                    Object controllerInstance = controllerClass.getDeclaredConstructor().newInstance();
-
-                    for (Method method : controllerClass.getDeclaredMethods()) {
-                        if (method.isAnnotationPresent(GetMethode.class)) {
-                            GetMethode gm = method.getAnnotation(GetMethode.class);
-                            String fullPath = prefix + gm.value();
-
-                            String normalizedPath = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-                            String normalizedFullPath = fullPath.endsWith("/") ? fullPath.substring(0, fullPath.length() - 1) : fullPath;
-
-                            if (normalizedPath.equals(normalizedFullPath)) {
-                                method.invoke(controllerInstance, request, response);
-                                handled = true;
-                                return;
-                            }
-                        }
-                    }
-
-                    if (!handled) {
-                        try {
-                            controllerClass.getMethod("handle", HttpServletRequest.class, HttpServletResponse.class)
-                                           .invoke(controllerInstance, request, response);
-                            handled = true;
-                            return;
-                        } catch (NoSuchMethodException ignored) {}
-                    }
-
-                } catch (Exception e) {
-                    throw new ServletException("Error invoking controller for path " + path, e);
-                }
+            for (Method m : cls.getDeclaredMethods()) {
+                String annotation = m.isAnnotationPresent(com.example.annotation.GetMethode.class) ? " @GetMethode" : "";
+                out.println("<li>" + m.getName() + "()" + annotation + "</li>");
             }
-        }
 
-        if (!handled) handleFileRequest(request, response, path);
-    }
+            out.println("</ul>");
 
-    private Set<Class<?>> findClassesWithAnnotation(String basePackage, Class<?> annotation) {
-        Set<Class<?>> classes = new HashSet<>();
-        try {
-            String path = basePackage.replace('.', '/');
-            Enumeration<URL> resources = Thread.currentThread().getContextClassLoader().getResources(path);
+            out.println("<h3>Executing method for this URL:</h3>");
+            out.println("<div style='border:1px solid #ccc;padding:10px;'>");
+            method.invoke(controller, request, response);
+            out.println("</div>");
 
-            while (resources.hasMoreElements()) {
-                URL resource = resources.nextElement();
-                String filePath = URLDecoder.decode(resource.getFile(), "UTF-8");
-                File dir = new File(filePath);
-
-                if (dir.exists()) {
-                    for (File file : Objects.requireNonNull(dir.listFiles())) {
-                        if (file.getName().endsWith(".class")) {
-                            String className = basePackage + '.' + file.getName().replace(".class", "");
-                            try {
-                                Class<?> cls = Class.forName(className);
-                                if (cls.isAnnotationPresent((Class) annotation)) {
-                                    classes.add(cls);
-                                }
-                            } catch (Throwable ignored) {}
-                        }
-                    }
-                } else if (filePath.contains(".jar!")) {
-                    String jarPath = filePath.substring(5, filePath.indexOf("!"));
-                    try (JarFile jar = new JarFile(jarPath)) {
-                        Enumeration<JarEntry> entries = jar.entries();
-                        while (entries.hasMoreElements()) {
-                            JarEntry entry = entries.nextElement();
-                            String name = entry.getName();
-                            if (name.startsWith(path) && name.endsWith(".class")) {
-                                String className = name.replace('/', '.').replace(".class", "");
-                                try {
-                                    Class<?> cls = Class.forName(className);
-                                    if (cls.isAnnotationPresent((Class) annotation)) {
-                                        classes.add(cls);
-                                    }
-                                } catch (Throwable ignored) {}
-                            }
-                        }
-                    }
-                }
-            }
+            out.println("</body></html>");
         } catch (Exception e) {
-            e.printStackTrace();
+            throw new ServletException("Failed to list methods or invoke controller", e);
         }
-        return classes;
+        return;
     }
+    handleFileRequest(request, response, path);
+}
+
 
     private void handleFileRequest(HttpServletRequest request, HttpServletResponse response, String path)
             throws IOException, ServletException {
@@ -172,4 +98,6 @@ public class FrontController extends HttpServlet {
             while ((line = reader.readLine()) != null) out.println(line);
         }
     }
+
+    
 }

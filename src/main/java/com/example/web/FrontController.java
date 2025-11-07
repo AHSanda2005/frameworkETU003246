@@ -2,6 +2,8 @@ package com.example.web;
 
 import java.io.*;
 import java.lang.reflect.Method;
+import java.util.Map;
+
 import javax.servlet.*;
 import javax.servlet.http.*;
 
@@ -9,13 +11,12 @@ public class FrontController extends HttpServlet {
 
     @Override
 public void init() throws ServletException {
-    ControllerScanner.initialize("com.example.controller");
+    ControllerScanner.initialize("com.example.controller", getServletContext());
+
     ControllerScanner.printAllRoutes();
 
     ControllerScanner.listMethods("com.example.controller");
 }
-
-
 
     @Override
 protected void service(HttpServletRequest request, HttpServletResponse response)
@@ -23,13 +24,19 @@ protected void service(HttpServletRequest request, HttpServletResponse response)
 
     response.setContentType("text/html;charset=UTF-8");
 
+    Map<String, Method> routes = (Map<String, Method>) getServletContext().getAttribute("routes");
+    Map<Method, Object> instances = (Map<Method, Object>) getServletContext().getAttribute("instances");
+
+    if (routes == null || instances == null) {
+        throw new ServletException(" Routes not initialized in ServletContext");
+    }
+
     String path = request.getRequestURI().substring(request.getContextPath().length());
     if (path.isEmpty() || path.equals("/")) path = "/index";
 
-    Method method = ControllerScanner.getMethod(path);
-
+    Method method = routes.get(path);
     if (method != null) {
-        Object controller = ControllerScanner.getController(method);
+        Object controller = instances.get(method);
 
         try (PrintWriter out = response.getWriter()) {
             Class<?> cls = controller.getClass();
@@ -56,6 +63,7 @@ protected void service(HttpServletRequest request, HttpServletResponse response)
         }
         return;
     }
+
     handleFileRequest(request, response, path);
 }
 

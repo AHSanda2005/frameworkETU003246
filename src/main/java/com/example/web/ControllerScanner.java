@@ -11,14 +11,19 @@ public class ControllerScanner {
     private static final Map<String, Method> routes = new HashMap<>();
     private static final Map<Method, Object> instances = new HashMap<>();
 
+   public static void initialize(String basePackagePath, javax.servlet.ServletContext context) {
+    try {
+        scanAndRegister(basePackagePath);
 
-    public static void initialize(String basePackagePath) {
-        try {
-            scanAndRegister(basePackagePath);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        context.setAttribute("routes", routes);
+        context.setAttribute("instances", instances);
+
+        System.out.println("Controller routes stored in ServletContext.");
+    } catch (Exception e) {
+        e.printStackTrace();
     }
+}
+
 
     private static void scanAndRegister(String packageName) throws Exception {
         String path = packageName.replace('.', '/');
@@ -118,6 +123,7 @@ public class ControllerScanner {
     }
 
     public static void printAllRoutes() {
+        System.out.println("Registered Routes");
         for (Map.Entry<String, Method> entry : routes.entrySet()) {
             System.out.println(" - " + entry.getKey() + " → " + entry.getValue().getDeclaringClass().getSimpleName() + "." + entry.getValue().getName() + "()");
         }

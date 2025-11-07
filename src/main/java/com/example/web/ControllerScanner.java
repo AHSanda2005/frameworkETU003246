@@ -8,22 +8,17 @@ import com.example.annotation.GetMethode;
 
 public class ControllerScanner {
 
-    // --- ROUTE REGISTRATION ---
     private static final Map<String, Method> routes = new HashMap<>();
     private static final Map<Method, Object> instances = new HashMap<>();
 
-    /**
-     * Initialize controllers: register routes from @AnnotationController classes
-     */
    public static void initialize(String basePackagePath, javax.servlet.ServletContext context) {
     try {
         scanAndRegister(basePackagePath);
 
-        // Store results in servlet context
         context.setAttribute("routes", routes);
         context.setAttribute("instances", instances);
 
-        System.out.println("✅ Controller routes stored in ServletContext.");
+        System.out.println("Controller routes stored in ServletContext.");
     } catch (Exception e) {
         e.printStackTrace();
     }
@@ -52,7 +47,6 @@ public class ControllerScanner {
 
                     boolean foundAnnotatedMethod = false;
 
-                    // Register all @GetMethode methods
                     for (Method method : cls.getDeclaredMethods()) {
                         if (method.isAnnotationPresent(GetMethode.class)) {
                             GetMethode getAnno = method.getAnnotation(GetMethode.class);
@@ -64,7 +58,6 @@ public class ControllerScanner {
                         }
                     }
 
-                    // Fallback to legacy "handle" method if no annotated methods
                     if (!foundAnnotatedMethod) {
                         try {
                             Method handle = cls.getMethod(
@@ -92,10 +85,6 @@ public class ControllerScanner {
         return instances.get(method);
     }
 
-    // --- METHOD LISTING ONLY ---
-    /**
-     * List all methods in all classes in the package
-     */
     public static void listMethods(String basePackage) {
         try {
             scanAndList(basePackage);
@@ -133,11 +122,8 @@ public class ControllerScanner {
         }
     }
 
-    /**
-     * Print all registered routes
-     */
     public static void printAllRoutes() {
-        System.out.println("\n📋 === Registered Routes ===");
+        System.out.println("Registered Routes");
         for (Map.Entry<String, Method> entry : routes.entrySet()) {
             System.out.println(" - " + entry.getKey() + " → " + entry.getValue().getDeclaringClass().getSimpleName() + "." + entry.getValue().getName() + "()");
         }

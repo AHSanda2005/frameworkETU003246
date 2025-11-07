@@ -28,7 +28,7 @@ protected void service(HttpServletRequest request, HttpServletResponse response)
     Map<Method, Object> instances = (Map<Method, Object>) getServletContext().getAttribute("instances");
 
     if (routes == null || instances == null) {
-        throw new ServletException("❌ Routes not initialized in ServletContext");
+        throw new ServletException(" Routes not initialized in ServletContext");
     }
 
     String path = request.getRequestURI().substring(request.getContextPath().length());

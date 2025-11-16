@@ -53,8 +53,11 @@ protected void service(HttpServletRequest request, HttpServletResponse response)
             out.println("</ul>");
 
             out.println("<h3>Executing method for this URL:</h3>");
-            out.println("<div style='border:1px solid #ccc;padding:10px;'>");
-            method.invoke(controller, request, response);
+            Object result = method.invoke(controller, request, response);
+
+            if (result != null && result instanceof String) {
+                out.println(result.toString());
+            }
             out.println("</div>");
 
             out.println("</body></html>");
@@ -66,7 +69,6 @@ protected void service(HttpServletRequest request, HttpServletResponse response)
 
     handleFileRequest(request, response, path);
 }
-
 
     private void handleFileRequest(HttpServletRequest request, HttpServletResponse response, String path)
             throws IOException, ServletException {

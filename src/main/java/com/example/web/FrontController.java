@@ -1,5 +1,7 @@
 package com.example.web;
 
+import com.example.util.*;
+
 import java.io.*;
 import java.lang.reflect.Method;
 import java.util.Map;
@@ -55,12 +57,20 @@ protected void service(HttpServletRequest request, HttpServletResponse response)
             out.println("<h3>Executing method for this URL:</h3>");
             Object result = method.invoke(controller, request, response);
 
+            if (result != null && result instanceof ModelView) {
+                ModelView mv = (ModelView) result;
+                String view = mv.getView(); 
+                if (!view.startsWith("/views/")) {
+                    view = "/views/" + view;
+                }
+                RequestDispatcher rd = request.getRequestDispatcher(view);
+                rd.forward(request, response);
+                return; 
+            }
+
             if (result != null && result instanceof String) {
                 out.println(result.toString());
             }
-            out.println("</div>");
-
-            out.println("</body></html>");
         } catch (Exception e) {
             throw new ServletException("Failed to list methods or invoke controller", e);
         }

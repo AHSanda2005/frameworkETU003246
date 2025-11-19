@@ -1,8 +1,12 @@
 package com.example.util;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class ModelView {
 
     private String view;
+    private Map<String, Object> data = new HashMap<>();
 
     public ModelView() {
     }
@@ -17,5 +21,13 @@ public class ModelView {
 
     public void setView(String view) {
         this.view = view;
+    }
+
+     public Map<String, Object> getData() {
+        return data;
+    }
+
+    public void addItem(String key, Object value) {
+        data.put(key, value);
     }
 }

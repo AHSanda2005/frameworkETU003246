@@ -59,6 +59,10 @@ protected void service(HttpServletRequest request, HttpServletResponse response)
 
             if (result != null && result instanceof ModelView) {
                 ModelView mv = (ModelView) result;
+                for (Map.Entry<String, Object> entry : mv.getData().entrySet()) {
+                    request.setAttribute(entry.getKey(), entry.getValue());
+                }
+
                 String view = mv.getView(); 
                 if (!view.startsWith("/views/")) {
                     view = "/views/" + view;

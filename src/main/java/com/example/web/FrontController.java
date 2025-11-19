@@ -1,109 +1,114 @@
 package com.example.web;
 
-import com.example.util.*;
-
 import java.io.*;
 import java.lang.reflect.Method;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 import javax.servlet.*;
 import javax.servlet.http.*;
 
+import com.example.util.ModelView;
+
 public class FrontController extends HttpServlet {
 
     @Override
-public void init() throws ServletException {
-    ControllerScanner.initialize("com.example.controller", getServletContext());
+    public void init() throws ServletException {
+        ControllerScanner.initialize("com.example.controller", getServletContext());
 
-    ControllerScanner.printAllRoutes();
-
-    ControllerScanner.listMethods("com.example.controller");
-}
+        ControllerScanner.printAllRoutes();
+    }
 
     @Override
-protected void service(HttpServletRequest request, HttpServletResponse response)
-        throws ServletException, IOException {
+    protected void service(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
 
-    response.setContentType("text/html;charset=UTF-8");
+        response.setContentType("text/html;charset=UTF-8");
 
-    List<RouteEntry> dynamicRoutes =
-        (List<RouteEntry>) getServletContext().getAttribute("dynamicRoutes");
+        Map<String, Method> routes =
+                (Map<String, Method>) getServletContext().getAttribute("routes");
+        Map<Method, Object> instances =
+                (Map<Method, Object>) getServletContext().getAttribute("instances");
+        List<RouteEntry> dynamicRoutes =
+                (List<RouteEntry>) getServletContext().getAttribute("dynamicRoutes");
 
+        if (routes == null || instances == null || dynamicRoutes == null) {
+            throw new ServletException("Routes not initialized in ServletContext");
+        }
 
-    String path = request.getRequestURI().substring(request.getContextPath().length());
-    if (path.isEmpty() || path.equals("/")) path = "/index";
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        if (path.isEmpty() || path.equals("/")) path = "/index";
 
-    RouteEntry matched = null;
-java.util.regex.Matcher matcher = null;
+        RouteEntry matched = null;
+        java.util.regex.Matcher matcher = null;
 
-for (RouteEntry entry : dynamicRoutes) {
-    matcher = entry.getPattern().matcher(path);
-    if (matcher.matches()) {
-        matched = entry;
-        break;
-    }
-}
-
-if (matched != null) {
-
-    Method method = matched.getMethod();
-    Object controller = matched.getInstance();
-
-    for (String groupName : matched.getPattern().pattern().split("\\(\\?<")) {
-        if (groupName.contains(">")) {
-            String name = groupName.substring(0, groupName.indexOf(">"));
-            String value = matcher.group(name);
-            if (value != null) {
-                request.setAttribute(name, value);
+        for (RouteEntry entry : dynamicRoutes) {
+            matcher = entry.getPattern().matcher(path);
+            if (matcher.matches()) {
+                matched = entry;
+                break;
             }
         }
+
+        if (matched != null) {
+            invokeDynamicRoute(matched, matcher, request, response);
+            return;
+        }
+
+        Method method = routes.get(path);
+        if (method != null) {
+            Object controller = instances.get(method);
+            invokeMethod(controller, method, request, response);
+            return;
+        }
+
+        handleFileRequest(request, response, path);
     }
 
+    private void invokeDynamicRoute(RouteEntry matched, java.util.regex.Matcher matcher,
+                                    HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
 
-        try (PrintWriter out = response.getWriter()) {
-            Class<?> cls = controller.getClass();
-            out.println("<html><body>");
-            out.println("<h2>Controller: " + cls.getSimpleName() + "</h2>");
-            out.println("<h3>Methods:</h3>");
-            out.println("<ul>");
+        Method method = matched.getMethod();
+        Object controller = matched.getInstance();
 
-            for (Method m : cls.getDeclaredMethods()) {
-                String annotation = m.isAnnotationPresent(com.example.annotation.GetMethode.class) ? " @GetMethode" : "";
-                out.println("<li>" + m.getName() + "()" + annotation + "</li>");
+        for (String groupName : matched.getPattern().pattern().split("\\(\\?<")) {
+            if (groupName.contains(">")) {
+                String name = groupName.substring(0, groupName.indexOf(">"));
+                String value = matcher.group(name);
+                if (value != null) request.setAttribute(name, value);
             }
+        }
 
-            out.println("</ul>");
+        invokeMethod(controller, method, request, response);
+    }
 
-            out.println("<h3>Executing method for this URL:</h3>");
+    private void invokeMethod(Object controller, Method method,
+                              HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        try (PrintWriter out = response.getWriter()) {
             Object result = method.invoke(controller, request, response);
 
             if (result != null && result instanceof ModelView) {
                 ModelView mv = (ModelView) result;
+
                 for (Map.Entry<String, Object> entry : mv.getData().entrySet()) {
                     request.setAttribute(entry.getKey(), entry.getValue());
                 }
 
-                String view = mv.getView(); 
-                if (!view.startsWith("/views/")) {
-                    view = "/views/" + view;
-                }
+                String view = mv.getView();
+                if (!view.startsWith("/views/")) view = "/views/" + view;
                 RequestDispatcher rd = request.getRequestDispatcher(view);
                 rd.forward(request, response);
-                return; 
-            }
-
-            if (result != null && result instanceof String) {
+            } else if (result != null && result instanceof String) {
                 out.println(result.toString());
             }
-        } catch (Exception e) {
-            throw new ServletException("Failed to list methods or invoke controller", e);
-        }
-        return;
-    }
 
-    handleFileRequest(request, response, path);
-}
+        } catch (Exception e) {
+            throw new ServletException("Failed to invoke controller method", e);
+        }
+    }
 
     private void handleFileRequest(HttpServletRequest request, HttpServletResponse response, String path)
             throws IOException, ServletException {
@@ -143,6 +148,4 @@ if (matched != null) {
             while ((line = reader.readLine()) != null) out.println(line);
         }
     }
-
-    
 }

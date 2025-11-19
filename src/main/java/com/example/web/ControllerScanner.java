@@ -3,6 +3,9 @@ package com.example.web;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.regex.Pattern;
+
+
 import com.example.annotation.AnnotationController;
 import com.example.annotation.GetMethode;
 
@@ -10,6 +13,7 @@ public class ControllerScanner {
 
     private static final Map<String, Method> routes = new HashMap<>();
     private static final Map<Method, Object> instances = new HashMap<>();
+    private static final List<RouteEntry> dynamicRoutes = new ArrayList<>();
 
    public static void initialize(String basePackagePath, javax.servlet.ServletContext context) {
     try {
@@ -17,6 +21,7 @@ public class ControllerScanner {
 
         context.setAttribute("routes", routes);
         context.setAttribute("instances", instances);
+        context.setAttribute("dynamicRoutes", dynamicRoutes);
 
         System.out.println("Controller routes stored in ServletContext.");
     } catch (Exception e) {
@@ -50,11 +55,24 @@ public class ControllerScanner {
                     for (Method method : cls.getDeclaredMethods()) {
                         if (method.isAnnotationPresent(GetMethode.class)) {
                             GetMethode getAnno = method.getAnnotation(GetMethode.class);
-                            String fullRoute = baseRoute + getAnno.value();
-                            routes.put(fullRoute, method);
-                            instances.put(method, instance);
+                           String fullRoute = baseRoute + getAnno.value();
                             foundAnnotatedMethod = true;
-                            System.out.println("Registered route: " + fullRoute + " → " + cls.getSimpleName() + "." + method.getName() + "()");
+
+                            if (fullRoute.contains("{")) {
+                                String regex = fullRoute.replaceAll("\\{([^/]+)\\}", "(?<$1>[^/]+)");
+                                regex = "^" + regex + "$";
+
+                                dynamicRoutes.add(new RouteEntry(Pattern.compile(regex), method, instance));
+
+                                System.out.println("Registered DYNAMIC route: " + fullRoute + " → " + regex);
+                            } else {
+                                routes.put(fullRoute, method);
+                                instances.put(method, instance);
+
+                                System.out.println("Registered STATIC route: " + fullRoute +
+                                        " → " + cls.getSimpleName() + "." + method.getName());
+                            }
+
                         }
                     }
 
@@ -123,10 +141,14 @@ public class ControllerScanner {
     }
 
     public static void printAllRoutes() {
-        System.out.println("Registered Routes");
+        System.out.println("📌 STATIC ROUTES:");
         for (Map.Entry<String, Method> entry : routes.entrySet()) {
-            System.out.println(" - " + entry.getKey() + " → " + entry.getValue().getDeclaringClass().getSimpleName() + "." + entry.getValue().getName() + "()");
+            System.out.println(" • " + entry.getKey());
+        }
+
+        System.out.println("\n📌 DYNAMIC ROUTES:");
+        for (RouteEntry r : dynamicRoutes) {
+            System.out.println(" • " + r.getPattern());
         }
     }
-
 }

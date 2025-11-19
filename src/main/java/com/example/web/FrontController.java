@@ -4,6 +4,7 @@ import com.example.util.*;
 
 import java.io.*;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 
 import javax.servlet.*;
@@ -26,19 +27,39 @@ protected void service(HttpServletRequest request, HttpServletResponse response)
 
     response.setContentType("text/html;charset=UTF-8");
 
-    Map<String, Method> routes = (Map<String, Method>) getServletContext().getAttribute("routes");
-    Map<Method, Object> instances = (Map<Method, Object>) getServletContext().getAttribute("instances");
+    List<RouteEntry> dynamicRoutes =
+        (List<RouteEntry>) getServletContext().getAttribute("dynamicRoutes");
 
-    if (routes == null || instances == null) {
-        throw new ServletException(" Routes not initialized in ServletContext");
-    }
 
     String path = request.getRequestURI().substring(request.getContextPath().length());
     if (path.isEmpty() || path.equals("/")) path = "/index";
 
-    Method method = routes.get(path);
-    if (method != null) {
-        Object controller = instances.get(method);
+    RouteEntry matched = null;
+java.util.regex.Matcher matcher = null;
+
+for (RouteEntry entry : dynamicRoutes) {
+    matcher = entry.getPattern().matcher(path);
+    if (matcher.matches()) {
+        matched = entry;
+        break;
+    }
+}
+
+if (matched != null) {
+
+    Method method = matched.getMethod();
+    Object controller = matched.getInstance();
+
+    for (String groupName : matched.getPattern().pattern().split("\\(\\?<")) {
+        if (groupName.contains(">")) {
+            String name = groupName.substring(0, groupName.indexOf(">"));
+            String value = matcher.group(name);
+            if (value != null) {
+                request.setAttribute(name, value);
+            }
+        }
+    }
+
 
         try (PrintWriter out = response.getWriter()) {
             Class<?> cls = controller.getClass();

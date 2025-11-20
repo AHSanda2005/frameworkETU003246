@@ -12,36 +12,27 @@ import javax.servlet.ServletContext;
 
 public class ControllerScanner {
 
-    // STATIC ROUTES (exact match like "/test/hello")
     private static final Map<String, Method> routes = new HashMap<>();
     private static final Map<Method, Object> instances = new HashMap<>();
 
-    // DYNAMIC ROUTES (regex match like "/test/bye/{id}")
     public static final List<RouteEntry> dynamicRoutes = new ArrayList<>();
 
 
-    // --------------------------------------------------------------------
-    // INITIALIZATION
-    // --------------------------------------------------------------------
     public static void initialize(String basePackage, ServletContext context) {
         try {
             scanAndRegister(basePackage);
 
-            // Store in ServletContext for FrontController access
             context.setAttribute("routes", routes);
             context.setAttribute("instances", instances);
             context.setAttribute("dynamicRoutes", dynamicRoutes);
 
-            System.out.println("✅ Routes and dynamic routes stored in ServletContext.");
+            System.out.println("Routes and dynamic routes stored in ServletContext.");
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
 
-    // --------------------------------------------------------------------
-    // SCAN CONTROLLERS AND REGISTER ROUTES
-    // --------------------------------------------------------------------
     private static void scanAndRegister(String packageName) throws Exception {
 
         String path = packageName.replace('.', '/');
@@ -71,10 +62,6 @@ public class ControllerScanner {
             Object instance = cls.getDeclaredConstructor().newInstance();
             boolean foundAnnotatedMethod = false;
 
-
-            // ---------------------------
-            // REGISTER @GetMethode METHODS
-            // ---------------------------
             for (Method method : cls.getDeclaredMethods()) {
 
                 if (!method.isAnnotationPresent(GetMethode.class))
@@ -83,13 +70,11 @@ public class ControllerScanner {
                 foundAnnotatedMethod = true;
 
                 GetMethode getAnnotation = method.getAnnotation(GetMethode.class);
-                String fullRoute = baseRoute + getAnnotation.value();  // e.g. "/test/bye/{id}"
+                String fullRoute = baseRoute + getAnnotation.value();  
 
 
-                // Check if it's dynamic (contains {...})
                 if (fullRoute.contains("{")) {
 
-                    // Convert "/test/bye/{id}" → ^/test/bye/(?<id>[^/]+)$
                     String regex = fullRoute.replaceAll("\\{([^/]+)}", "(?<$1>[^/]+)");
                     regex = "^" + regex + "$";
 
@@ -98,18 +83,14 @@ public class ControllerScanner {
                     System.out.println("🔵 Registered dynamic route: " + fullRoute + " → " + regex);
                 }
                 else {
-                    // Static route
                     routes.put(fullRoute, method);
                     instances.put(method, instance);
 
-                    System.out.println("🟢 Registered static route: " + fullRoute);
+                    System.out.println(" Registered static route: " + fullRoute);
                 }
             }
 
 
-            // --------------------------------------------------------
-            // FALLBACK TO handle() IF NO @GetMethode IS FOUND
-            // --------------------------------------------------------
             if (!foundAnnotatedMethod) {
                 try {
                     Method defaultMethod = cls.getMethod("handle",

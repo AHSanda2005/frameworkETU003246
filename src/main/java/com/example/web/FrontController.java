@@ -67,17 +67,22 @@ public class FrontController extends HttpServlet {
     }
 
     private void invokeDynamicRoute(RouteEntry matched, java.util.regex.Matcher matcher,
-                                    HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+                                HttpServletRequest request, HttpServletResponse response)
+        throws ServletException, IOException {
 
-        Method method = matched.getMethod();
-        Object controller = matched.getInstance();
+    Method method = matched.getMethod();
+    Object controller = matched.getInstance();
 
-        for (String groupName : matched.getPattern().pattern().split("\\(\\?<")) {
-            if (groupName.contains(">")) {
-                String name = groupName.substring(0, groupName.indexOf(">"));
-                String value = matcher.group(name);
-                if (value != null) request.setAttribute(name, value);
+    java.util.regex.Pattern groupPattern =
+            java.util.regex.Pattern.compile("\\(\\?<([a-zA-Z0-9_]+)>");
+
+    java.util.regex.Matcher gm = groupPattern.matcher(matched.getPattern().pattern());
+
+     while (gm.find()) {
+        String name = gm.group(1);
+        String value = matcher.group(name);
+            if (value != null) {
+                request.setAttribute(name, value);
             }
         }
 

@@ -90,29 +90,87 @@ public class FrontController extends HttpServlet {
     }
 
     private void invokeMethod(Object controller, Method method,
-                              HttpServletRequest request, HttpServletResponse response)
+                            HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         try (PrintWriter out = response.getWriter()) {
-            Object result = method.invoke(controller, request, response);
 
-            if (result != null && result instanceof ModelView) {
-                ModelView mv = (ModelView) result;
+            Object[] args = buildMethodArguments(method, request, response);
 
-                for (Map.Entry<String, Object> entry : mv.getData().entrySet()) {
-                    request.setAttribute(entry.getKey(), entry.getValue());
-                }
+            Object result = method.invoke(controller, args);
 
-                String view = mv.getView();
-                if (!view.startsWith("/views/")) view = "/views/" + view;
-                RequestDispatcher rd = request.getRequestDispatcher(view);
-                rd.forward(request, response);
-            } else if (result != null && result instanceof String) {
-                out.println(result.toString());
-            }
+            if (result instanceof ModelView) {
+        ModelView mv = (ModelView) result;
+
+        for (Map.Entry<String, Object> entry : mv.getData().entrySet()) {
+            request.setAttribute(entry.getKey(), entry.getValue());
+        }
+
+        String view = mv.getView();
+        if (!view.startsWith("/views/")) view = "/views/" + view;
+        request.getRequestDispatcher(view).forward(request, response);
+
+    } else if (result instanceof String) {
+        out.println((String) result);
+    }
+
 
         } catch (Exception e) {
             throw new ServletException("Failed to invoke controller method", e);
         }
+    }
+
+    private Object[] buildMethodArguments(Method method,
+                                        HttpServletRequest request,
+                                        HttpServletResponse response) {
+
+        Class<?>[] paramTypes = method.getParameterTypes();
+        java.lang.annotation.Annotation[][] paramAnnotations = method.getParameterAnnotations();
+
+        Object[] args = new Object[paramTypes.length];
+
+        for (int i = 0; i < paramTypes.length; i++) {
+
+            if (paramTypes[i] == HttpServletRequest.class) {
+                args[i] = request;
+                continue;
+            }
+
+            if (paramTypes[i] == HttpServletResponse.class) {
+                args[i] = response;
+                continue;
+            }
+
+            for (java.lang.annotation.Annotation a : paramAnnotations[i]) {
+                if (a instanceof com.example.annotation.RequestParam) {
+        com.example.annotation.RequestParam rp =
+                (com.example.annotation.RequestParam) a;
+
+        String paramName = rp.value();
+
+                    String value = request.getParameter(paramName);
+
+                    args[i] = convertType(value, paramTypes[i]);
+                }
+            }
+        }
+
+        return args;
+    }
+
+    private Object convertType(String value, Class<?> type) {
+        if (value == null) return null;
+
+        try {
+            if (type == int.class || type == Integer.class) return Integer.parseInt(value);
+            if (type == double.class || type == Double.class) return Double.parseDouble(value);
+            if (type == float.class  || type == Float.class)  return Float.parseFloat(value);
+            if (type == boolean.class || type == Boolean.class) return Boolean.parseBoolean(value);
+
+        } catch (Exception e) {
+            return null;
+        }
+
+        return value; 
     }
 
     private void handleFileRequest(HttpServletRequest request, HttpServletResponse response, String path)

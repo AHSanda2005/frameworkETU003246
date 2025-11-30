@@ -120,42 +120,56 @@ public class FrontController extends HttpServlet {
     }
 
     private Object[] buildMethodArguments(Method method,
-                                        HttpServletRequest request,
-                                        HttpServletResponse response) {
+                                     HttpServletRequest request,
+                                     HttpServletResponse response) {
 
-        Class<?>[] paramTypes = method.getParameterTypes();
-        java.lang.annotation.Annotation[][] paramAnnotations = method.getParameterAnnotations();
+    Class<?>[] paramTypes = method.getParameterTypes();
+    java.lang.annotation.Annotation[][] paramAnnotations = method.getParameterAnnotations();
 
-        Object[] args = new Object[paramTypes.length];
+    Object[] args = new Object[paramTypes.length];
 
-        for (int i = 0; i < paramTypes.length; i++) {
+    for (int i = 0; i < paramTypes.length; i++) {
 
-            if (paramTypes[i] == HttpServletRequest.class) {
-                args[i] = request;
-                continue;
-            }
+        if (paramTypes[i] == HttpServletRequest.class) {
+            args[i] = request;
+            continue;
+        }
 
-            if (paramTypes[i] == HttpServletResponse.class) {
-                args[i] = response;
-                continue;
-            }
+        if (paramTypes[i] == HttpServletResponse.class) {
+            args[i] = response;
+            continue;
+        }
 
+        Object value = null;
+
+        String paramName = method.getParameters()[i].getName();
+        value = request.getAttribute(paramName);
+
+        if ((value == null || value.toString().isEmpty()) && paramAnnotations[i].length > 0) {
             for (java.lang.annotation.Annotation a : paramAnnotations[i]) {
                 if (a instanceof com.example.annotation.RequestParam) {
-        com.example.annotation.RequestParam rp =
-                (com.example.annotation.RequestParam) a;
-
-        String paramName = rp.value();
-
-                    String value = request.getParameter(paramName);
-
-                    args[i] = convertType(value, paramTypes[i]);
+                    com.example.annotation.RequestParam rp =
+                            (com.example.annotation.RequestParam) a;
+                    paramName = rp.value();
+                    value = request.getParameter(paramName);
+                    break;
                 }
             }
         }
 
-        return args;
+        if (value == null) {
+            value = request.getParameter(paramName);
+        }
+
+        if (value == null) {
+            args[i] = null; 
+        } else {
+            args[i] = convertType(value.toString(), paramTypes[i]);
+        }
     }
+
+    return args;
+}
 
     private Object convertType(String value, Class<?> type) {
         if (value == null) return null;

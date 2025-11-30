@@ -26,12 +26,14 @@ public class FrontController extends HttpServlet {
 
         response.setContentType("text/html;charset=UTF-8");
 
-        Map<String, Method> routes =
-                (Map<String, Method>) getServletContext().getAttribute("routes");
+        Map<String, Map<String, Method>> routes =
+                (Map<String, Map<String, Method>>) getServletContext().getAttribute("routes");
+
         Map<Method, Object> instances =
                 (Map<Method, Object>) getServletContext().getAttribute("instances");
-        List<RouteEntry> dynamicRoutes =
-                (List<RouteEntry>) getServletContext().getAttribute("dynamicRoutes");
+
+        List<DynamicRouteEntry> dynamicRoutes =
+                (List<DynamicRouteEntry>) getServletContext().getAttribute("dynamicRoutes");
 
         if (routes == null || instances == null || dynamicRoutes == null) {
             throw new ServletException("Routes not initialized in ServletContext");
@@ -40,49 +42,74 @@ public class FrontController extends HttpServlet {
         String path = request.getRequestURI().substring(request.getContextPath().length());
         if (path.isEmpty() || path.equals("/")) path = "/index";
 
-        RouteEntry matched = null;
-        java.util.regex.Matcher matcher = null;
+        String httpMethod = request.getMethod();
 
-        for (RouteEntry entry : dynamicRoutes) {
-            matcher = entry.getPattern().matcher(path);
+        DynamicRouteEntry matched = null;
+        java.util.regex.Matcher matcher = null;
+        boolean pathExists = false;
+
+        for (DynamicRouteEntry entry : dynamicRoutes) {
+            matcher = entry.pattern.matcher(path);
             if (matcher.matches()) {
-                matched = entry;
-                break;
+                pathExists = true; 
+                if (entry.methods.containsKey(httpMethod)) {
+                    matched = entry;
+                    break; 
+                }
             }
         }
 
         if (matched != null) {
-            invokeDynamicRoute(matched, matcher, request, response);
+            invokeDynamicRoute(matched, matcher, request, response, httpMethod);
+            return;
+        } else if (pathExists) {
+            response.setStatus(405);
+            response.getWriter().println("HTTP 405: Method Not Allowed");
             return;
         }
 
-        Method method = routes.get(path);
-        if (method != null) {
+        Map<String, Method> httpMethods = routes.get(path);
+
+        if (httpMethods != null) {
+            Method method = httpMethods.get(httpMethod);
+
+            if (method == null) {
+                response.setStatus(405);
+                response.getWriter().println("HTTP 405: Method Not Allowed");
+                return;
+            }
+
             Object controller = instances.get(method);
             invokeMethod(controller, method, request, response);
             return;
         }
-
         handleFileRequest(request, response, path);
     }
 
-    private void invokeDynamicRoute(RouteEntry matched, java.util.regex.Matcher matcher,
-                                HttpServletRequest request, HttpServletResponse response)
-        throws ServletException, IOException {
+    private void invokeDynamicRoute(DynamicRouteEntry matched, java.util.regex.Matcher matcher,
+                                    HttpServletRequest request, HttpServletResponse response,
+                                    String httpMethod)
+            throws ServletException, IOException {
 
-    Method method = matched.getMethod();
-    Object controller = matched.getInstance();
+        Method method = matched.methods.get(httpMethod);
+        Object controller = matched.instance;
 
-    java.util.regex.Pattern groupPattern =
-            java.util.regex.Pattern.compile("\\(\\?<([a-zA-Z0-9_]+)>");
+        if (method == null) {
+            response.setStatus(405);
+            response.getWriter().println("HTTP 405: Method Not Allowed");
+            return;
+        }
 
-    java.util.regex.Matcher gm = groupPattern.matcher(matched.getPattern().pattern());
+        java.util.regex.Pattern groupPattern =
+                java.util.regex.Pattern.compile("\\(\\?<([a-zA-Z0-9_]+)>");
 
-     while (gm.find()) {
-        String name = gm.group(1);
-        String value = matcher.group(name);
+        java.util.regex.Matcher gm = groupPattern.matcher(matched.pattern.pattern());
+
+        while (gm.find()) {
+            String name = gm.group(1);
+            String value = matcher.group(name);
             if (value != null) {
-                request.setAttribute(name, value);
+                request.setAttribute(name, value); 
             }
         }
 

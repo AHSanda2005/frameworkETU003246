@@ -5,17 +5,16 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.regex.Pattern;
 
-import com.example.annotation.AnnotationController;
-import com.example.annotation.GetMethode;
+import com.example.annotation.*;
 
 import javax.servlet.ServletContext;
 
 public class ControllerScanner {
 
-    private static final Map<String, Method> routes = new HashMap<>();
+    private static final Map<String, Map<String, Method>> routes = new HashMap<>();
     private static final Map<Method, Object> instances = new HashMap<>();
 
-    public static final List<RouteEntry> dynamicRoutes = new ArrayList<>();
+    public static final List<DynamicRouteEntry> dynamicRoutes = new ArrayList<>();
 
 
     public static void initialize(String basePackage, ServletContext context) {
@@ -64,13 +63,31 @@ public class ControllerScanner {
 
             for (Method method : cls.getDeclaredMethods()) {
 
-                if (!method.isAnnotationPresent(GetMethode.class))
+                String httpMethod = null;
+                String routeValue = null;
+
+                if (method.isAnnotationPresent(GetMethode.class)) {
+                    httpMethod = "GET";
+                    routeValue = method.getAnnotation(GetMethode.class).value();
+                } else if (method.isAnnotationPresent(PostMethode.class)) {
+                    httpMethod = "POST";
+                    routeValue = method.getAnnotation(PostMethode.class).value();
+                } else if (method.isAnnotationPresent(PutMethode.class)) {
+                    httpMethod = "PUT";
+                    routeValue = method.getAnnotation(PutMethode.class).value();
+                } else if (method.isAnnotationPresent(DeleteMethode.class)) {
+                    httpMethod = "DELETE";
+                    routeValue = method.getAnnotation(DeleteMethode.class).value();
+                } else if (method.isAnnotationPresent(PatchMethode.class)) {
+                    httpMethod = "PATCH";
+                    routeValue = method.getAnnotation(PatchMethode.class).value();
+                } else {
+                    // no HTTP annotation → skip
                     continue;
+                }
 
                 foundAnnotatedMethod = true;
-
-                GetMethode getAnnotation = method.getAnnotation(GetMethode.class);
-                String fullRoute = baseRoute + getAnnotation.value();  
+                String fullRoute = baseRoute + routeValue;  
 
 
                 if (fullRoute.contains("{")) {
@@ -78,15 +95,19 @@ public class ControllerScanner {
                     String regex = fullRoute.replaceAll("\\{([^/]+)}", "(?<$1>[^/]+)");
                     regex = "^" + regex + "$";
 
-                    dynamicRoutes.add(new RouteEntry(Pattern.compile(regex), method, instance));
-
-                    System.out.println("🔵 Registered dynamic route: " + fullRoute + " → " + regex);
-                }
-                else {
-                    routes.put(fullRoute, method);
+                    DynamicRouteEntry entry = findOrCreateDynamicEntry(regex, instance);
+                    entry.methods.put(httpMethod, method);
                     instances.put(method, instance);
 
-                    System.out.println(" Registered static route: " + fullRoute);
+                    System.out.println(" Registered dynamic route [" + httpMethod + "]: " + fullRoute + " → " + regex);
+                }
+
+                else {
+                    routes.computeIfAbsent(fullRoute, k -> new HashMap<>())
+                          .put(httpMethod, method);
+                    instances.put(method, instance);
+
+                    System.out.println(" Registered static route [" + httpMethod + "]: " + fullRoute);
                 }
             }
 
@@ -98,47 +119,64 @@ public class ControllerScanner {
                             javax.servlet.http.HttpServletResponse.class
                     );
 
-                    routes.put(baseRoute, defaultMethod);
+                    routes.computeIfAbsent(baseRoute, k -> new HashMap<>())
+                        .put("GET", defaultMethod);
                     instances.put(defaultMethod, instance);
 
-                    System.out.println("⚪ Default controller registered for: " + baseRoute);
+
+                    System.out.println(" Default controller registered for: " + baseRoute);
                 }
                 catch (NoSuchMethodException ignored) {
-                    System.out.println("❌ No @GetMethode and no handle() in " + cls.getSimpleName());
+                    System.out.println(" No @GetMethode and no handle() in " + cls.getSimpleName());
                 }
             }
         }
     }
 
-
-    // --------------------------------------------------------------------
-    // GETTERS
-    // --------------------------------------------------------------------
-    public static Method getStaticMethod(String path) {
-        return routes.get(path);
+    private static DynamicRouteEntry findOrCreateDynamicEntry(String regex, Object instance) {
+        for (DynamicRouteEntry e : dynamicRoutes) {
+            if (e.pattern.pattern().equals(regex)) {
+                return e;
+            }
+        }
+        DynamicRouteEntry newEntry = new DynamicRouteEntry(Pattern.compile(regex), instance);
+        dynamicRoutes.add(newEntry);
+        return newEntry;
+    }
+    public static Method getStaticMethod(String path, String httpMethod) {
+        Map<String, Method> methods = routes.get(path);
+        if (methods == null) return null;
+        return methods.get(httpMethod);
     }
 
     public static Object getController(Method method) {
         return instances.get(method);
     }
 
-    public static List<RouteEntry> getDynamicRoutes() {
+    public static List<DynamicRouteEntry> getDynamicRoutes() {
         return dynamicRoutes;
     }
 
+    public static Set<String> getAllowedMethodsForPath(String path) {
+        Map<String, Method> methods = routes.get(path);
+        return methods == null ? Collections.emptySet() : methods.keySet();
+    }
 
     // --------------------------------------------------------------------
     // DEBUGGING TOOLS
     // --------------------------------------------------------------------
     public static void printAllRoutes() {
         System.out.println("\n===== STATIC ROUTES =====");
-        for (String r : routes.keySet()) {
-            System.out.println(" - " + r);
+        for (Map.Entry<String, Map<String, Method>> kv : routes.entrySet()) {
+            String path = kv.getKey();
+            String methodsList = String.join(", ", kv.getValue().keySet());
+            System.out.println(" - " + path + " -> [" + methodsList + "]");
         }
 
         System.out.println("\n===== DYNAMIC ROUTES =====");
-        for (RouteEntry e : dynamicRoutes) {
-            System.out.println(" - " + e.getPattern().pattern());
+        for (DynamicRouteEntry e : dynamicRoutes) {
+            String methodsList = String.join(", ", e.methods.keySet());
+            System.out.println(" - " + e.pattern.pattern() + " -> [" + methodsList + "]");
         }
     }
     public static void listMethods(String basePackage) {

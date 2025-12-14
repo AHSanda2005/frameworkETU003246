@@ -176,6 +176,11 @@ public class FrontController extends HttpServlet {
 
     for (int i = 0; i < paramTypes.length; i++) {
 
+        if (Map.class.isAssignableFrom(paramTypes[i])) {
+            args[i] = buildMapFromRequest(request);
+            continue;
+        }
+
         if (paramTypes[i] == HttpServletRequest.class) {
             args[i] = request;
             continue;
@@ -270,5 +275,29 @@ public class FrontController extends HttpServlet {
             String line;
             while ((line = reader.readLine()) != null) out.println(line);
         }
+    }
+
+    private Map<String, Object> buildMapFromRequest(HttpServletRequest request) {
+
+        Map<String, Object> data = new java.util.HashMap<>();
+
+        Map<String, String[]> parameterMap = request.getParameterMap();
+
+        for (Map.Entry<String, String[]> entry : parameterMap.entrySet()) {
+
+            String key = entry.getKey();
+            String[] values = entry.getValue();
+
+            if (values == null) continue;
+
+            if (values.length == 1) {
+                data.put(key, values[0]);
+            }
+            else {
+                data.put(key, values);
+            }
+        }
+
+        return data;
     }
 }

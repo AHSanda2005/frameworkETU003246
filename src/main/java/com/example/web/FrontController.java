@@ -9,7 +9,9 @@ import java.util.Map;
 import javax.servlet.*;
 import javax.servlet.http.*;
 
+import com.example.util.JsonConverter;
 import com.example.util.ModelView;
+import com.example.annotation.*;
 
 public class FrontController extends HttpServlet {
 
@@ -142,22 +144,27 @@ public class FrontController extends HttpServlet {
 
             Object[] args = buildMethodArguments(method, request, response);
 
-            Object result = method.invoke(controller, args);
+           Object result = method.invoke(controller, args);
+
+            if (method.isAnnotationPresent(RESTapi.class)) {
+                handleRESTResponse(result, response);
+                return;
+            }
 
             if (result instanceof ModelView) {
-        ModelView mv = (ModelView) result;
+                ModelView mv = (ModelView) result;
 
-        for (Map.Entry<String, Object> entry : mv.getData().entrySet()) {
-            request.setAttribute(entry.getKey(), entry.getValue());
-        }
+                for (Map.Entry<String, Object> entry : mv.getData().entrySet()) {
+                    request.setAttribute(entry.getKey(), entry.getValue());
+                }
 
-        String view = mv.getView();
-        if (!view.startsWith("/views/")) view = "/views/" + view;
-        request.getRequestDispatcher(view).forward(request, response);
+                String view = mv.getView();
+                if (!view.startsWith("/views/")) view = "/views/" + view;
+                request.getRequestDispatcher(view).forward(request, response);
 
-    } else if (result instanceof String) {
-        out.println((String) result);
-    }
+            } else if (result instanceof String) {
+                out.println((String) result);
+            }
 
 
         } catch (Exception e) {
@@ -289,6 +296,18 @@ public class FrontController extends HttpServlet {
             e.printStackTrace();
             return null;
         }
+    }
+     private void handleRESTResponse(Object result, HttpServletResponse response) throws IOException {
+        response.setContentType("application/json;charset=UTF-8");
+
+        Map<String, Object> jsonResponse = new java.util.HashMap<>();
+        jsonResponse.put("status", "success");
+        jsonResponse.put("code", 200);
+        jsonResponse.put("message", "OK");
+        jsonResponse.put("data", result);
+
+        PrintWriter out = response.getWriter();
+        out.println(JsonConverter.toJson(jsonResponse));
     }
 
 }

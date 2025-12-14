@@ -175,48 +175,15 @@ public class FrontController extends HttpServlet {
     Object[] args = new Object[paramTypes.length];
 
     for (int i = 0; i < paramTypes.length; i++) {
+        if (paramTypes[i] == HttpServletRequest.class) { args[i] = request; continue; }
+        if (paramTypes[i] == HttpServletResponse.class) { args[i] = response; continue; }
 
         if (Map.class.isAssignableFrom(paramTypes[i])) {
             args[i] = buildMapFromRequest(request);
             continue;
         }
 
-        if (paramTypes[i] == HttpServletRequest.class) {
-            args[i] = request;
-            continue;
-        }
-
-        if (paramTypes[i] == HttpServletResponse.class) {
-            args[i] = response;
-            continue;
-        }
-
-        Object value = null;
-
-        String paramName = method.getParameters()[i].getName();
-        value = request.getAttribute(paramName);
-
-        if ((value == null || value.toString().isEmpty()) && paramAnnotations[i].length > 0) {
-            for (java.lang.annotation.Annotation a : paramAnnotations[i]) {
-                if (a instanceof com.example.annotation.RequestParam) {
-                    com.example.annotation.RequestParam rp =
-                            (com.example.annotation.RequestParam) a;
-                    paramName = rp.value();
-                    value = request.getParameter(paramName);
-                    break;
-                }
-            }
-        }
-
-        if (value == null) {
-            value = request.getParameter(paramName);
-        }
-
-        if (value == null) {
-            args[i] = null; 
-        } else {
-            args[i] = convertType(value.toString(), paramTypes[i]);
-        }
+        args[i] = buildArgumentForType(paramTypes[i], request);
     }
 
     return args;
@@ -300,4 +267,28 @@ public class FrontController extends HttpServlet {
 
         return data;
     }
+        private Object buildArgumentForType(Class<?> type, HttpServletRequest request) {
+        try {
+            Object obj = type.getDeclaredConstructor().newInstance();
+
+            // Loop through all fields
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                field.setAccessible(true);
+                String paramName = field.getName();
+                String paramValue = request.getParameter(paramName);
+
+                if (paramValue != null) {
+                    Object value = convertType(paramValue, field.getType());
+                    field.set(obj, value);
+                }
+            }
+
+            return obj;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
 }

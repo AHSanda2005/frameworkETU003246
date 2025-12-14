@@ -19,6 +19,17 @@ public class FrontController extends HttpServlet {
 
         ControllerScanner.printAllRoutes();
     }
+    @Override
+    protected void doPut(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        service(request, response);
+    }
+
+    @Override
+    protected void doDelete(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        service(request, response);
+    }
 
     @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
@@ -43,6 +54,14 @@ public class FrontController extends HttpServlet {
         if (path.isEmpty() || path.equals("/")) path = "/index";
 
         String httpMethod = request.getMethod();
+
+        if ("POST".equalsIgnoreCase(httpMethod)) {
+            String override = request.getParameter("_method");
+            if (override != null && !override.isEmpty()) {
+                httpMethod = override.toUpperCase();
+            }
+        }
+
 
         DynamicRouteEntry matched = null;
         java.util.regex.Matcher matcher = null;

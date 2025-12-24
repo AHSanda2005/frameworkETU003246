@@ -2,17 +2,19 @@ package com.example.web;
 
 import java.io.*;
 import java.lang.reflect.Method;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 import javax.servlet.*;
 import javax.servlet.http.*;
+import javax.servlet.annotation.MultipartConfig;
 
+import com.example.util.MultipartHelper;
 import com.example.util.JsonConverter;
 import com.example.util.ModelView;
 import com.example.annotation.*;
 
+@MultipartConfig
 public class FrontController extends HttpServlet {
 
     @Override
@@ -56,11 +58,22 @@ public class FrontController extends HttpServlet {
         if (path.isEmpty() || path.equals("/")) path = "/index";
 
         String httpMethod = request.getMethod();
-
         if ("POST".equalsIgnoreCase(httpMethod)) {
             String override = request.getParameter("_method");
             if (override != null && !override.isEmpty()) {
                 httpMethod = override.toUpperCase();
+            }
+        }
+
+        boolean isMultipart = request.getContentType() != null
+        && request.getContentType().toLowerCase().startsWith("multipart/");
+        Map<String, byte[]> uploadedFiles = null;
+        if (isMultipart) {
+            try {
+                uploadedFiles = MultipartHelper.saveOnTomcat(request);
+                request.setAttribute("__files__", uploadedFiles);
+            } catch (Exception e) {
+                throw new ServletException("Multipart upload failed", e);
             }
         }
 
@@ -138,13 +151,11 @@ public class FrontController extends HttpServlet {
     }
 
     private void invokeMethod(Object controller, Method method,
-                            HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
-        try (PrintWriter out = response.getWriter()) {
-
+                          HttpServletRequest request, HttpServletResponse response)
+        throws ServletException, IOException {
+        try {
             Object[] args = buildMethodArguments(method, request, response);
-
-           Object result = method.invoke(controller, args);
+            Object result = method.invoke(controller, args);
 
             if (method.isAnnotationPresent(RESTapi.class)) {
                 handleRESTResponse(result, response);
@@ -153,48 +164,57 @@ public class FrontController extends HttpServlet {
 
             if (result instanceof ModelView) {
                 ModelView mv = (ModelView) result;
-
                 for (Map.Entry<String, Object> entry : mv.getData().entrySet()) {
                     request.setAttribute(entry.getKey(), entry.getValue());
                 }
-
                 String view = mv.getView();
                 if (!view.startsWith("/views/")) view = "/views/" + view;
                 request.getRequestDispatcher(view).forward(request, response);
-
             } else if (result instanceof String) {
-                out.println((String) result);
+                try (PrintWriter out = response.getWriter()) {
+                    out.println((String) result);
+                }
             }
-
-
         } catch (Exception e) {
             throw new ServletException("Failed to invoke controller method", e);
         }
     }
 
     private Object[] buildMethodArguments(Method method,
-                                     HttpServletRequest request,
-                                     HttpServletResponse response) {
+                                          HttpServletRequest request,
+                                          HttpServletResponse response) {
 
-    Class<?>[] paramTypes = method.getParameterTypes();
-    java.lang.annotation.Annotation[][] paramAnnotations = method.getParameterAnnotations();
+        Class<?>[] paramTypes = method.getParameterTypes();
+        java.lang.annotation.Annotation[][] paramAnnotations = method.getParameterAnnotations();
 
-    Object[] args = new Object[paramTypes.length];
+        Object[] args = new Object[paramTypes.length];
 
-    for (int i = 0; i < paramTypes.length; i++) {
+        for (int i = 0; i < paramTypes.length; i++) {
         if (paramTypes[i] == HttpServletRequest.class) { args[i] = request; continue; }
         if (paramTypes[i] == HttpServletResponse.class) { args[i] = response; continue; }
+
+        if (Map.class.isAssignableFrom(paramTypes[i])
+                && request.getAttribute("__files__") != null) {
+
+            args[i] = request.getAttribute("__files__");
+            continue;
+        }
 
         if (Map.class.isAssignableFrom(paramTypes[i])) {
             args[i] = buildMapFromRequest(request);
             continue;
         }
 
+
+        request.getParameterMap().forEach((k, v) -> 
+        System.out.println("Param: " + k + " = " + String.join(",", v))
+    );
+
         args[i] = buildArgumentForType(paramTypes[i], request);
     }
 
-    return args;
-}
+        return args;
+    }
 
     private Object convertType(String value, Class<?> type) {
         if (value == null) return null;
